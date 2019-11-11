@@ -20,21 +20,16 @@ def image_to_byte_array(image: Image):
 @app.route('/api/upload', methods=['POST'])
 def main():
     # load our input image and grab its spatial dimensions
-    img = request.files["image"].read()
-    img = Image.open(io.BytesIO(img))
-
     options = {"model": "./cfg/yolo.cfg", "load": "./cfg/yolo.weights", "threshold": 0.1, "gpu": 1.0}
 
     tfnet = TFNet(options)
-    #url = request.form["image"]
+    url = request.form["image"]
     #url = "https://c8.alamy.com/comp/C8XXYP/airport-vehicles-dubai-international-airport-united-arab-emirates-C8XXYP.jpg"
 
     # Read image to classify
-    #resp = urlopen(url)
-    #img = np.asarray(bytearray(resp.read()), dtype="uint8")
-    img = np.asarray(img)
-    img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
-
+    resp = urlopen(url)
+    img = np.asarray(bytearray(resp.read()), dtype="uint8")
+    img = cv2.imdecode(img, cv2.IMREAD_COLOR)
     font = cv2.FONT_HERSHEY_SIMPLEX
 
     result = tfnet.return_predict(img)
