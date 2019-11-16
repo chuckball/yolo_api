@@ -8,57 +8,83 @@ from urllib.request import urlopen
 # For Eureka Functionality (Register, Renew, and Quit)
 import requests
 import json
-import schedule 
+import schedule
 import threading
+# Scheduler to repeatedly send renew
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 # Initialize the Flask application
 app = Flask(__name__)
+
+SERVICE_NAME = "3102YOLOSERVICE"
+REGISTRY_URL = "http://localhost:8761/eureka/apps/" + SERVICE_NAME +"/"
+INSTANCEID = "YOLO"
 
 def image_to_byte_array(image: Image):
     imgByteArr = io.BytesIO()
     image.save(imgByteArr, format='PNG')
     imgByteArr = imgByteArr.getvalue()
     return imgByteArr
-    
+
+# Function to register the YOLO service with Spring Registry
 def registerService(port):
     # Request body for Eureka Registration
-        data = {
-            "instance": {
-                "instanceId":"YOLO"+str(port),
-                "hostName": "127.0.0.1",
-                "app": "3102yolotest",
-                "ipAddr": "127.0.0.1",
-                "status": "UP",
-                "port": {
-                            "$": port,
-                            "@enabled": True
-                },
-                "dataCenterInfo":{ 
-                "@class":"com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo",
-                "name":"MyOwn"
-            }
+    data = {
+        "instance": {
+            "instanceId": INSTANCEID + str(port),
+            "hostName": "127.0.0.1",
+            "app": SERVICE_NAME,
+            "ipAddr": "127.0.0.1",
+            "status": "UP",
+            "port": {
+                        "$": port,
+                        "@enabled": True
+            },
+            "dataCenterInfo": {
+                "@class": "com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo",
+                "name": "MyOwn"
             }
         }
-        header = {"Content-Type": "application/json"}
-        response = requests.post(
-            "http://localhost:8761/eureka/apps/3102yolotest", data=json.dumps(data), headers=header)
-        if(response.status_code == 204):
-            print("Successfully registered service")
-        else:
-            print("Error registering service")
+    }
+    header = {"Content-Type": "application/json"}
+    response = requests.post(REGISTRY_URL, data=json.dumps(data), headers=header)
+    if(response.status_code == 204):
+        print("Successfully registered service")
+    else:
+        print("Error registering service")
 
+# Function to renew YOLO service leaase with Spring Registry
 def renewLease(port):
-    response = requests.put("http://localhost:8761/eureka/apps/3102yolotest/YOLO"+str(port))
+    response = requests.put(REGISTRY_URL + INSTANCEID + str(port))
     if(response.status_code == 200):
         print("Successfully renewed lease")
-    else: 
+    else:
         print("Error renewing lease")
-    threading.Timer(30, renewLease, [port]).start
 
+# Initialises and starts a scheduler to repeatedly call renewLease
+def initRenewScheduler(port):
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=(lambda: renewLease(port)),
+                      trigger="interval", seconds=20)
+    scheduler.start()
+    if(scheduler.running):
+        print("Scheduler started")
+    else:
+        print("Scheduler failed to start")
+
+# Unregister YOLO service from Spring Registry
+def unregisterService(port):
+    response = requests.delete(REGISTRY_URL + INSTANCEID + str(port))
+    if(response.status_code == 200):
+        print("Successfully unregistered")
+    else:
+        print("Failed to unregister")
+    
 
 # route http posts to this method
 @app.route('/api/upload', methods=['POST'])
-def main():
+def upload():
     # load our input image and grab its spatial dimensions
     img = request.files["image"].read()
     img = Image.open(io.BytesIO(img))
@@ -93,6 +119,12 @@ def main():
 
     return Response(response=img_encoded, status=200, mimetype="image/jpeg")
 
+
+# Test endpoint to check status of server
+@app.route('/test', methods=['GET'])
+def test():
+    print("Test works")
+    return "WORKS"
 # In case you wanna use this as backend too
 # @app.route('/')
 # def index():
@@ -111,6 +143,7 @@ def main():
 #       user = request.args.get('nm')
 #       return redirect(url_for('success',name = user))
 
+
 if __name__ == '__main__':
     print("if __name__ == '__main__'")
     from argparse import ArgumentParser
@@ -119,8 +152,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     portArgs = args.port
     registerService(portArgs)
-    renewLease(portArgs)
-    app.run(debug=True, host="0.0.0.0", port=portArgs)
+    initRenewScheduler(portArgs)
+    app.run(debug=True, host="0.0.0.0", port=portArgs, use_reloader=False)
 
 # git clone https://github.com/thtrieu/darkflow.git
 # pip install Cython
