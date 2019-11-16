@@ -52,20 +52,23 @@ def registerService(port):
     if(response.status_code == 204):
         print("Successfully registered service")
     else:
-        print("Error registering service")
+        print("Error registering | Status Code: " + str(response.status_code))
 
 # Function to renew YOLO service leaase with Spring Registry
-def renewLease(port):
-    response = requests.put(REGISTRY_URL + INSTANCEID + str(port))
+def sendHeartbeat(port):
+    response = requests.put(REGISTRY_URL + INSTANCEID + str(port) + "?status=UP")
     if(response.status_code == 200):
-        print("Successfully renewed lease")
+        print("Heartbeat Sent")
+    elif (response.status_code == 404):
+        print("Failed to send Heartbeat, 404 received, registering...")
+        registerService(port)
     else:
-        print("Error renewing lease")
+        print("Failed to send Heartbeat | Status Code: " + str(response.status_code))
 
 # Initialises and starts a scheduler to repeatedly call renewLease
-def initRenewScheduler(port):
+def initHeartbeatScheduler(port):
     scheduler = BackgroundScheduler()
-    scheduler.add_job(func=(lambda: renewLease(port)),
+    scheduler.add_job(func=(lambda: sendHeartbeat(port)),
                       trigger="interval", seconds=20)
     scheduler.start()
     if(scheduler.running):
@@ -79,7 +82,7 @@ def unregisterService(port):
     if(response.status_code == 200):
         print("Successfully unregistered")
     else:
-        print("Failed to unregister")
+        print("Failed to unregister | Status Code: " + str(response.status_code))
     
 
 # route http posts to this method
@@ -152,8 +155,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     portArgs = args.port
     registerService(portArgs)
-    initRenewScheduler(portArgs)
-    app.run(debug=True, host="0.0.0.0", port=portArgs, use_reloader=False)
+    initHeartbeatScheduler(portArgs)
+    atexit.register(lambda: unregisterService(portArgs))
+    app.run(debug=False, host="0.0.0.0", port=portArgs, use_reloader=False)
 
 # git clone https://github.com/thtrieu/darkflow.git
 # pip install Cython
